@@ -1,0 +1,19 @@
+# Example 19, the orchestrator peer: no provider key, the fleet is its model.
+agentspaces:
+  bind: 127.0.0.1:7722
+  tick-millis: 250
+  groups:
+    - name: ai-fleet
+      founding: langchain4j-ai-fleet-v1
+      seeds: [127.0.0.1:7721]
+      spaces:
+        - name: tasks
+          settle-window-millis: 100
+        - name: model-requests
+          settle-window-millis: 100
+  tools:
+    refresh-interval: 1s
+  langchain4j:
+    model-client:
+      enabled: true
+      model: gpt-4.1-mini

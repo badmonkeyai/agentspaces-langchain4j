@@ -1,0 +1,17 @@
+# Example 19, the worker peer: two agents and the fleet's model server.
+agentspaces:
+  bind: 127.0.0.1:7721
+  tick-millis: 250
+  groups:
+    - name: ai-fleet
+      founding: langchain4j-ai-fleet-v1
+      spaces:
+        - name: tasks
+          settle-window-millis: 100
+        - name: model-requests
+          settle-window-millis: 100
+  langchain4j:
+    model-server:
+      enabled: true          # serves the worker's OpenAI model under its name
+    usage:
+      enabled: true
