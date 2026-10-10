@@ -2,9 +2,9 @@
 
 AgentSpaces for LangChain4j applications on any JVM host. A command-line
 agent, an embedded service, a batch job, or a service on a framework
-AgentSpaces has no host library for joins a fleet and uses every feature the
-Spring AI and Micronaut bridges offer, with no application framework on the
-classpath: the fleet's AgentCards as a LangChain4j `ToolProvider`, a take
+AgentSpaces has no host library for joins a fleet and uses the fleet features
+the Spring AI and Micronaut bridges offer (the MCP export stays with those two
+hosts), with no application framework on the classpath: the fleet's AgentCards as a LangChain4j `ToolProvider`, a take
 lease renewed per model round-trip and carried across threads, chat memory
 in a replicated space, model access as a fleet service, real embeddings for
 semantic discovery, and fleet-wide token usage. The wire records are
@@ -72,7 +72,15 @@ classpath; the enforcer rule and a test keep it that way. JDK 21.
 | Usage | `Usage.on()`: token usage as push-sum totals across the fleet, attributed entries in an optional metrics space, and a console panel (`fleet.usagePanel()`). |
 
 Every feature is off until its settings enable it, so a one-line facade never
-widens the fleet's reach by accident. The security notes of the Micronaut
+widens the fleet's reach by accident. The fleet annotations and return
+conventions the runtime passes through to the core binder (`@SpaceNotify`
+with `on = EXPIRED`, `@BidFunction` on an AUCTION space, `@SpaceRef`,
+`@Propose`, `@OnDecision` with `@Ballot` across two runtimes, `@OnEstimate`,
+`@SpaceJoin`, `@SpaceReduce`, `@CapabilityRef`, and the `Tagged`, `Entries`,
+`Motion`, and `Contribution` returns) are proven through `FleetRuntime.bind`
+by `AnnotationPassthroughTest`, and `LangChain4jNotifyServiceTest` binds an
+`AiServices` interface whose method carries `@SpaceNotify` beside
+`@UserMessage`. The security notes of the Micronaut
 bridge apply unchanged: tool descriptions are model input, `requireAttested`
 admits only agents signing with a certified key, model requests are readable
 by every peer admitted to the model space, and a caller accepts a response
