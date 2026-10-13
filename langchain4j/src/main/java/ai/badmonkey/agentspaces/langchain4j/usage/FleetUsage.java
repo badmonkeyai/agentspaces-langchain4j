@@ -18,16 +18,21 @@ package ai.badmonkey.agentspaces.langchain4j.usage;
 import ai.badmonkey.agentspaces.api.space.Lease;
 import ai.badmonkey.agentspaces.api.space.Space;
 import ai.badmonkey.agentspaces.capabilities.aggregate.PushSumAggregate;
+import ai.badmonkey.agentspaces.api.space.Template;
 import ai.badmonkey.agentspaces.springai.model.wire.ModelUsage;
+import ai.badmonkey.agentspaces.springai.model.wire.ModelUsageTotal;
 
 import java.time.Clock;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.OptionalDouble;
 import java.util.TreeMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.LongAdder;
+
+import static ai.badmonkey.agentspaces.api.space.Matchers.eq;
 
 /**
  * Token usage as the fleet sees it: local totals per model and per agent, a
@@ -47,6 +52,10 @@ public class FleetUsage implements UsageSink {
     private final Clock clock;
     private final Map<String, LongAdder> byModel = new ConcurrentHashMap<>();
     private final Map<String, LongAdder> byAgent = new ConcurrentHashMap<>();
+    private final Map<String, LongAdder> promptByModel = new ConcurrentHashMap<>();
+    private final Map<String, LongAdder> completionByModel = new ConcurrentHashMap<>();
+    private final long sinceMillis = System.currentTimeMillis();
+    private volatile String peer = "";
 
     public FleetUsage(PushSumAggregate aggregate, Space metrics, Duration entryLease, Duration interval, Clock clock) {
         this.aggregate = aggregate;
@@ -59,6 +68,11 @@ public class FleetUsage implements UsageSink {
     @Override
     public void record(ModelUsage usage) {
         byModel.computeIfAbsent(usage.model(), k -> new LongAdder()).add(usage.totalTokens());
+        promptByModel.computeIfAbsent(usage.model(), k -> new LongAdder()).add(usage.promptTokens());
+        completionByModel.computeIfAbsent(usage.model(), k -> new LongAdder()).add(usage.completionTokens());
+        if (usage.peer() != null && !usage.peer().isBlank()) {
+            peer = usage.peer();
+        }
         byAgent.computeIfAbsent(usage.agent() == null || usage.agent().isEmpty() ? "(unattributed)" : usage.agent(),
                 k -> new LongAdder()).add(usage.totalTokens());
         if (metrics != null) {
@@ -67,28 +81,38 @@ public class FleetUsage implements UsageSink {
     }
 
     /** Starts the current window's aggregate per model with this peer's totals. */
+    /**
+     * Republishes this peer's running total per model into the metrics space as a
+     * {@link ModelUsageTotal} under a lease of three publish intervals: a per-peer counter that
+     * anti-entropy carries like any entry, so no gossip protocol runs for usage (PERF2 §3.5).
+     */
     public void publish() {
-        if (aggregate == null) {
+        if (metrics == null) {
             return;
         }
-        long window = window();
-        byModel.forEach((model, total) ->
-                aggregate.start(epoch(model, window), PushSumAggregate.Mode.SUM, total.sum()));
+        Duration retention = interval.multipliedBy(3);
+        Lease lease = Lease.of(retention.compareTo(Duration.ofSeconds(10)) < 0 ? Duration.ofSeconds(10) : retention);
+        byModel.forEach((model, total) -> metrics.write(new ModelUsageTotal(model, peer,
+                promptByModel.getOrDefault(model, new LongAdder()).sum(),
+                completionByModel.getOrDefault(model, new LongAdder()).sum(),
+                total.sum(), sinceMillis), lease));
     }
 
     /** The fleet's estimated total for a model, from the newest window that has one. */
+    /** The fleet's total for a model: the newest {@link ModelUsageTotal} per issuing peer, summed. */
     public OptionalDouble fleetTotal(String model) {
-        if (aggregate == null) {
+        if (metrics == null) {
             return OptionalDouble.empty();
         }
-        long window = window();
-        for (long w = window; w >= window - 2; w--) {
-            OptionalDouble estimate = aggregate.estimate(epoch(model, w));
-            if (estimate.isPresent()) {
-                return estimate;
-            }
+        Map<String, Long> newestByIssuer = new HashMap<>();
+        for (Space.Issued<ModelUsageTotal> issued : metrics.readAllIssued(
+                Template.of(ModelUsageTotal.class).where("model", eq(model)), 1000)) {
+            newestByIssuer.merge(issued.issuer().peer().value(), issued.entry().totalTokens(), Math::max);
         }
-        return OptionalDouble.empty();
+        if (newestByIssuer.isEmpty()) {
+            return OptionalDouble.empty();
+        }
+        return OptionalDouble.of(newestByIssuer.values().stream().mapToLong(Long::longValue).sum());
     }
 
     public Map<String, Long> localByModel() {
