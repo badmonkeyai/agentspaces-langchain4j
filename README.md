@@ -23,14 +23,14 @@ Two artifacts:
 <dependency>
   <groupId>ai.badmonkey.agentspaces</groupId>
   <artifactId>agentspaces-langchain4j</artifactId>
-  <version>0.2.0</version>
+  <version>0.3.0</version>
 </dependency>
 ```
 
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("ai.badmonkey.agentspaces:agentspaces-langchain4j:0.2.0")
+    implementation("ai.badmonkey.agentspaces:agentspaces-langchain4j:0.3.0")
 }
 ```
 
