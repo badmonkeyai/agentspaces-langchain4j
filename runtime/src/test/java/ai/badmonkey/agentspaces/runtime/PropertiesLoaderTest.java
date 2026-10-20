@@ -70,6 +70,31 @@ class PropertiesLoaderTest {
         assertThat(p.getGroups().get(0).getContentKeyRotation().getWriterGrace()).isEqualTo(Duration.ofMillis(250));
     }
 
+    /** SRAD dtls-support DT-H-10: the listener blocks bind in the runtime's YAML too. */
+    @Test
+    void bindsTheTransportListenerBlocks() {
+        AgentSpacesProperties p = PropertiesLoader.map(Map.of(
+                "transport", Map.of(
+                        "quic", Map.of("enabled", true, "bind", "0.0.0.0:7501", "priority", 2),
+                        "dtls", Map.ofEntries(Map.entry("enabled", true), Map.entry("bind", "0.0.0.0:7502"),
+                                Map.entry("advertise", "peer:7502"), Map.entry("attestation", "none"),
+                                Map.entry("protocols", List.of("DTLSv1.2")), Map.entry("connection-id", false),
+                                Map.entry("mtu", 1400), Map.entry("window", 128), Map.entry("idle-timeout", "2m"),
+                                Map.entry("max-half-open", 64), Map.entry("hello-rate-per-source", 32)))));
+        assertThat(p.getTransport().getQuic().isEnabled()).isTrue();
+        assertThat(p.getTransport().getQuic().getPriority()).isEqualTo(2);
+        AgentSpacesProperties.Transport.Dtls dtls = p.getTransport().getDtls();
+        assertThat(dtls.getBind()).isEqualTo("0.0.0.0:7502");
+        assertThat(dtls.getAdvertise()).isEqualTo("peer:7502");
+        assertThat(dtls.getAttestation()).isEqualTo("none");
+        assertThat(dtls.isConnectionId()).isFalse();
+        assertThat(dtls.getMtu()).isEqualTo(1400);
+        assertThat(dtls.getWindow()).isEqualTo(128);
+        assertThat(dtls.getIdleTimeout()).isEqualTo(Duration.ofMinutes(2));
+        assertThat(dtls.getMaxHalfOpen()).isEqualTo(64);
+        assertThat(dtls.getHelloRatePerSource()).isEqualTo(32);
+    }
+
     @Test
     void rejectsUnknownKeysSoTyposSurfaceAtStartup() {
         assertThatThrownBy(() -> PropertiesLoader.map(Map.of("tick-milis", "5"))).hasMessageContaining("tick-milis");

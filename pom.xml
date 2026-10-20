@@ -22,7 +22,7 @@
 
   <groupId>ai.badmonkey.agentspaces</groupId>
   <artifactId>agentspaces-langchain4j-parent</artifactId>
-  <version>0.3.0</version>
+  <version>0.4.0</version>
   <packaging>pom</packaging>
   <name>AgentSpaces LangChain4j :: Parent</name>
   <description>
@@ -84,7 +84,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
 
-    <agentspaces.version>0.3.0</agentspaces.version>
+    <agentspaces.version>0.4.0</agentspaces.version>
     <!-- The LangChain4j line the Micronaut 5.2 platform resolves, so the Micronaut
          adapter runs the same bytes; the langchain4j-1.22 profile verifies the
          current release. -->
