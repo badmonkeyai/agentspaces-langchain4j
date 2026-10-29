@@ -35,6 +35,15 @@
     workers and whose model is the fleet. No application framework.
   </description>
 
+  <properties>
+    <!-- An example: never published, even when -Pexamples joins it to a release build. -->
+    <maven.deploy.skip>true</maven.deploy.skip>
+    <skipPublishing>true</skipPublishing>
+    <gpg.skip>true</gpg.skip>
+    <maven.source.skip>true</maven.source.skip>
+    <maven.javadoc.skip>true</maven.javadoc.skip>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>ai.badmonkey.agentspaces</groupId>

@@ -344,6 +344,7 @@ classpath; the enforcer rule and a test keep it that way. JDK 21.
 | The model service | `ModelClient.of("model")`: `fleet.chatModel()` and `fleet.streamingChatModel()` route calls through the space to the peers that serve them. `ModelServer.on()` and `fleet.modelServer(ModelCatalog.of("model", chatModel, streamingModel))` serve this peer's models. Crash tolerance by lease, routing by model or by price, chunked streaming with reorder and restart policy, cancellation. |
 | Embeddings | `FleetRuntime.builder(...).embedder(LangChain4jFleet.embedder(embeddingModel, "name"))` puts a real model behind semantic discovery, advertised on the capability. |
 | Usage | `Usage.on()`: token usage as push-sum totals across the fleet, attributed entries in an optional metrics space, and a console panel (`fleet.usagePanel()`). |
+| Content tools | `FleetCapabilityTools.Settings.defaults().withContent(true)` (with `agentspaces.content.enabled` on the runtime): `publish_content`, `fetch_content`, `read_content`, `describe_content`, `list_content`, so a model publishes a file as a fleet artifact and reads one another peer published, moved by the content swarm from every holder at once (SPEC v0.1.23 §8). A space entry above `agentspaces.content.escalate-above` travels as an artifact on its own. |
 
 Every feature is off until its settings enable it, so a one-line facade never
 widens the fleet's reach by accident. The fleet annotations and return
