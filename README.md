@@ -16,7 +16,7 @@ An agent is a method. Its parameter is the work it takes, and its return value i
 <dependency>
   <groupId>ai.badmonkey.agentspaces</groupId>
   <artifactId>agentspaces-langchain4j</artifactId>
-  <version>0.4.0</version>
+  <version>0.5.0</version>
 </dependency>
 <dependency>
   <groupId>dev.langchain4j</groupId>
@@ -142,14 +142,14 @@ Two artifacts:
 <dependency>
   <groupId>ai.badmonkey.agentspaces</groupId>
   <artifactId>agentspaces-langchain4j</artifactId>
-  <version>0.4.0</version>
+  <version>0.5.0</version>
 </dependency>
 ```
 
 ```kotlin
 // build.gradle.kts
 dependencies {
-    implementation("ai.badmonkey.agentspaces:agentspaces-langchain4j:0.4.0")
+    implementation("ai.badmonkey.agentspaces:agentspaces-langchain4j:0.5.0")
 }
 ```
 
