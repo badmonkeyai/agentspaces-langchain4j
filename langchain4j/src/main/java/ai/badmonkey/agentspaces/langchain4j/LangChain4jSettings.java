@@ -355,7 +355,11 @@ public record LangChain4jSettings(DiscoveryTools discoveryTools, TakeLease takeL
         }
     }
 
-    /** Fleet-wide token usage: the aggregate, an optional metrics space, and the publish cadence. */
+    /**
+     * Fleet-wide token usage: an optional metrics space for the per-call entries and the per-peer
+     * totals, the entry lease, and how often this peer republishes its running total per model (the
+     * total's lease is three intervals, ten seconds at least).
+     */
     public record Usage(boolean enabled, String metricsSpace, Duration entryLease, Duration publishInterval) {
         public Usage {
             metricsSpace = metricsSpace == null ? "" : metricsSpace;

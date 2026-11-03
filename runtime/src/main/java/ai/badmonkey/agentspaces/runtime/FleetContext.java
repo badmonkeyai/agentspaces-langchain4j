@@ -22,6 +22,7 @@ import ai.badmonkey.agentspaces.common.id.PeerId;
 import ai.badmonkey.agentspaces.identity.PeerIdentity;
 
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * The one group a set of features works in, with the facade, the identity,
@@ -70,6 +71,17 @@ public class FleetContext {
 
     public Authorizer authorizer() {
         return authorizer;
+    }
+
+    /**
+     * The group's content swarm, present when {@code agentspaces.content.enabled} is true.
+     *
+     * @return the swarm, or empty
+     */
+    public Optional<ai.badmonkey.agentspaces.content.Content> content() {
+        return group().provider(ai.badmonkey.agentspaces.content.Content.TYPE)
+                .filter(ai.badmonkey.agentspaces.content.Content.class::isInstance)
+                .map(ai.badmonkey.agentspaces.content.Content.class::cast);
     }
 
     /**

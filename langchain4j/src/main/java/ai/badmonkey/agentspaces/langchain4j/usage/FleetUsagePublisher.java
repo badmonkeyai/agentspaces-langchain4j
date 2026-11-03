@@ -22,7 +22,7 @@ import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.ScheduledFuture;
 
-/** Publishes this peer's usage into the fleet aggregate on the publish interval. */
+/** Republishes this peer's running total per model into the metrics space on the publish interval. */
 public class FleetUsagePublisher implements FleetParticipant {
 
     private final FleetUsage usage;

@@ -171,4 +171,39 @@ class FleetRuntimeTest {
             }
         };
     }
+
+    @Test
+    @org.junit.jupiter.api.Timeout(60)
+    void theSwarmIsReachableFromTheContextAndAHostBackendJoinsItsStore(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+            throws Exception {
+        java.util.Map<String, Object> props = Fleets.fleet(Fleets.freePort(), 0);
+        props.put("agentspaces.capabilities.enabled", "true");
+        props.put("agentspaces.content.enabled", "true");
+        props.put("agentspaces.content.store.backends[0]", "memory");
+        props.put("agentspaces.content.download-bytes-per-day", "1048576");
+        ai.badmonkey.agentspaces.content.InPlaceStore host = new ai.badmonkey.agentspaces.content.InPlaceStore();
+        try (FleetRuntime runtime = FleetRuntime.builder(PropertiesLoader.flat(props))
+                .pieceStores("it-fleet", java.util.List.of(host)).start()) {
+            FleetContext fleet = runtime.context("it-fleet");
+            ai.badmonkey.agentspaces.content.Content content = fleet.content().orElseThrow();
+            assertThat(content.store()).isInstanceOf(ai.badmonkey.agentspaces.content.CompositeStore.class);
+            assertThat(((ai.badmonkey.agentspaces.content.CompositeStore) content.store()).backends())
+                    .as("the listed backend first, the host's after it").hasSize(2).last().isSameAs(host);
+            java.nio.file.Path file = dir.resolve("model.bin");
+            byte[] bytes = new byte[300_000];
+            new java.util.Random(7).nextBytes(bytes);
+            java.nio.file.Files.write(file, bytes);
+            ai.badmonkey.agentspaces.agent.content.Manifest manifest = content.publish(file,
+                    content.publishOptions().withInPlace(true));
+            assertThat(host.roots()).containsExactly(manifest.root());
+        }
+    }
+
+    @Test
+    @org.junit.jupiter.api.Timeout(60)
+    void withoutTheSwarmTheContextHasNoContent() {
+        try (FleetRuntime runtime = Fleets.start(Fleets.freePort(), 0)) {
+            assertThat(runtime.context("it-fleet").content()).isEmpty();
+        }
+    }
 }

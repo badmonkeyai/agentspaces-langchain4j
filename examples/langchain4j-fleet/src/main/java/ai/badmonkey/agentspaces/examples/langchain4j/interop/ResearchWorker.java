@@ -84,8 +84,10 @@ public final class ResearchWorker {
         Map<String, Object> p = new HashMap<>();
         p.put("agentspaces.tick-millis", "250");
         // Plain TCP, as the core example and the Python and TypeScript workers speak; the
-        // starter's default profile dials TLS, which a TcpTransport listener refuses.
-        p.put("agentspaces.security.profile", "dev-local");
+        // starter's default profile dials TLS, which a TcpTransport listener refuses. A
+        // "tls://host" selects that default (mtls) for a coordinator started with --tls.
+        boolean tls = host.startsWith("tls://");
+        p.put("agentspaces.security.profile", tls ? "mtls" : "dev-local");
         p.put("agentspaces.identity.agent-keys", "subordinate");
         p.put("agentspaces.groups[0].name", "research-fleet");
         p.put("agentspaces.groups[0].founding", FOUNDING);

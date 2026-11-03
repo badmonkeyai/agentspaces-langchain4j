@@ -17,7 +17,6 @@ package ai.badmonkey.agentspaces.langchain4j;
 
 import ai.badmonkey.agentspaces.api.spi.Authorizer;
 import ai.badmonkey.agentspaces.api.spi.Embedder;
-import ai.badmonkey.agentspaces.capabilities.aggregate.PushSumAggregate;
 import ai.badmonkey.agentspaces.langchain4j.embed.LangChain4jEmbedder;
 import ai.badmonkey.agentspaces.langchain4j.memory.ConversationIdResolver;
 import ai.badmonkey.agentspaces.langchain4j.memory.FleetChatMemoryProvider;
@@ -125,9 +124,7 @@ public final class LangChain4jFleet {
         // Listeners.
         this.takeLease = b.takeLease.enabled() ? new TakeLeaseListener(scheduler, b.takeLease.streamRenewInterval()) : null;
         if (b.usage.enabled()) {
-            PushSumAggregate aggregate = fleet.group().provider(PushSumAggregate.TYPE)
-                    .filter(PushSumAggregate.class::isInstance).map(PushSumAggregate.class::cast).orElse(null);
-            this.usage = new FleetUsage(aggregate,
+            this.usage = new FleetUsage(
                     b.usage.metricsSpace().isBlank() ? null
                             : fleet.requiredSpace(b.usage.metricsSpace(), "agentspaces.langchain4j.usage.metrics-space"),
                     b.usage.entryLease(), b.usage.publishInterval(), Clock.systemUTC());
@@ -303,12 +300,12 @@ public final class LangChain4jFleet {
         return modelServer(ModelCatalog.of(modelName, model));
     }
 
-    /** The fleet-wide usage aggregate; present when usage was enabled. */
+    /** The usage sink that holds this peer's counts and sums the fleet's per-peer totals; present when usage was enabled. */
     public FleetUsage usage() {
         return require(usage, "usage", "builder.usage(Usage)");
     }
 
-    /** A console panel over the usage aggregate, for a peer that runs the fleet console. */
+    /** A console panel over the usage sink, for a peer that runs the fleet console. */
     public UsagePanel usagePanel() {
         return new UsagePanel(usage());
     }

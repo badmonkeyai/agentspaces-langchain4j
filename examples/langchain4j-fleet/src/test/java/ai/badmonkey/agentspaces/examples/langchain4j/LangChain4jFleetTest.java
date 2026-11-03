@@ -56,7 +56,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class LangChain4jFleetTest {
 
     private static int freePort() {
-        try (ServerSocket socket = new ServerSocket(0)) {
+        try (ServerSocket socket = new ServerSocket(0, 50, java.net.InetAddress.getLoopbackAddress())) {
             return socket.getLocalPort();
         } catch (IOException e) {
             throw new UncheckedIOException(e);

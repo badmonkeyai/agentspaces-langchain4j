@@ -82,6 +82,8 @@ public final class FleetRuntime implements AutoCloseable {
     private FleetRuntime(Builder builder) {
         this.properties = builder.properties;
         AgentSpacesAutoConfiguration wiring = new AgentSpacesAutoConfiguration();
+        java.util.Map<String, List<ai.badmonkey.agentspaces.content.PieceStore>> stores = java.util.Map.copyOf(builder.pieceStores);
+        wiring.pieceStores(group -> stores.getOrDefault(group, List.of()));
         this.clock = builder.clock != null ? builder.clock : wiring.agentSpacesClock();
         this.identity = builder.identity != null ? builder.identity : wiring.agentSpacesIdentity(properties);
         this.node = wiring.agentSpacesNode(properties, identity);
@@ -280,6 +282,8 @@ public final class FleetRuntime implements AutoCloseable {
         private ScheduledExecutorService scheduler;
         private InstantSource clock;
         private PeerIdentity identity;
+        private final java.util.Map<String, List<ai.badmonkey.agentspaces.content.PieceStore>> pieceStores =
+                new java.util.HashMap<>();
 
         private Builder(AgentSpacesProperties properties) {
             this.properties = Objects.requireNonNull(properties, "properties");
@@ -312,6 +316,22 @@ public final class FleetRuntime implements AutoCloseable {
         /** A peer identity built elsewhere; the keystore the properties name otherwise. */
         public Builder identity(PeerIdentity identity) {
             this.identity = identity;
+            return this;
+        }
+
+        /**
+         * Adds content-store backends to a group's swarm (LB-T-07), such as a read-only store over a
+         * remote service's objects. A backend whose {@code kind()} is listed in
+         * {@code agentspaces.content.store.backends} takes that place in the read order; the others
+         * follow the listed ones. Needs {@code agentspaces.content.enabled: true}.
+         *
+         * @param group  the group name
+         * @param stores the backends
+         * @return this builder
+         */
+        public Builder pieceStores(String group, List<? extends ai.badmonkey.agentspaces.content.PieceStore> stores) {
+            Objects.requireNonNull(group, "group");
+            pieceStores.computeIfAbsent(group, g -> new ArrayList<>()).addAll(stores);
             return this;
         }
 
