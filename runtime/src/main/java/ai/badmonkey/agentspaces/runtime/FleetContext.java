@@ -20,6 +20,8 @@ import ai.badmonkey.agentspaces.api.space.Space;
 import ai.badmonkey.agentspaces.api.spi.Authorizer;
 import ai.badmonkey.agentspaces.common.id.PeerId;
 import ai.badmonkey.agentspaces.identity.PeerIdentity;
+import ai.badmonkey.agentspaces.pdt.Pdt;
+import ai.badmonkey.agentspaces.spring.Pdts;
 
 import java.util.Objects;
 import java.util.Optional;
@@ -35,13 +37,26 @@ public class FleetContext {
     private final String groupName;
     private final PeerIdentity identity;
     private final Authorizer authorizer;
+    private final Pdts pdts;
 
     public FleetContext(AgentSpaces spaces, String groupName, PeerIdentity identity,
                         Authorizer authorizer) {
+        this(spaces, groupName, identity, authorizer, new Pdts());
+    }
+
+    /**
+     * A context that also hands out the group's persistent-tree facade (srad/agentspaces-pdt.md
+     * PD-C-07, PD-C-09).
+     *
+     * @param pdts the holder the runtime's wiring registered each group's facade with
+     */
+    public FleetContext(AgentSpaces spaces, String groupName, PeerIdentity identity,
+                        Authorizer authorizer, Pdts pdts) {
         this.spaces = Objects.requireNonNull(spaces, "spaces");
         this.groupName = Objects.requireNonNull(groupName, "groupName");
         this.identity = Objects.requireNonNull(identity, "identity");
         this.authorizer = Objects.requireNonNull(authorizer, "authorizer");
+        this.pdts = Objects.requireNonNull(pdts, "pdts");
         if (!spaces.groupNames().contains(groupName)) {
             throw new IllegalStateException("agentspaces-runtime works in group '" + groupName
                     + "', which this node has not joined; joined groups: " + spaces.groupNames()
@@ -82,6 +97,27 @@ public class FleetContext {
         return group().provider(ai.badmonkey.agentspaces.content.Content.TYPE)
                 .filter(ai.badmonkey.agentspaces.content.Content.class::isInstance)
                 .map(ai.badmonkey.agentspaces.content.Content.class::cast);
+    }
+
+    /**
+     * The group's persistent-tree facade, present when {@code agentspaces.pdt.enabled} is true
+     * (srad/agentspaces-pdt.md PD-C-02).
+     *
+     * @return the facade, or empty
+     */
+    public Optional<Pdt> pdt() {
+        return pdts.find(groupName);
+    }
+
+    /**
+     * The group's persistent-tree facade, or a failure naming the property that turns it on.
+     *
+     * @return the facade
+     * @throws IllegalStateException when the group has none
+     */
+    public Pdt requiredPdt() {
+        return pdt().orElseThrow(() -> new IllegalStateException("the persistent trees are not enabled in group '"
+                + groupName + "' (agentspaces.pdt.enabled=true, with agentspaces.content.enabled=true)"));
     }
 
     /**

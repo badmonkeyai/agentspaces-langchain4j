@@ -26,6 +26,8 @@ import ai.badmonkey.agentspaces.peering.node.PeerNode;
 import ai.badmonkey.agentspaces.spring.AgentSpacesAutoConfiguration;
 import ai.badmonkey.agentspaces.spring.AgentSpacesProperties;
 import ai.badmonkey.agentspaces.spring.Authorizers;
+import ai.badmonkey.agentspaces.spring.BootstrapChainFactory;
+import ai.badmonkey.agentspaces.spring.Pdts;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -71,6 +73,7 @@ public final class FleetRuntime implements AutoCloseable {
     private final Authorizers authorizers;
     private final Embedder embedder;
     private final AgentIdentityFactory agentIdentities;
+    private final Pdts pdts;
     private final AgentSpaces spaces;
     private final Authorizer authorizer;
     private final FleetScheduler scheduler;
@@ -90,8 +93,11 @@ public final class FleetRuntime implements AutoCloseable {
         this.authorizers = wiring.agentSpacesAuthorizers(properties, identity, clock);
         this.embedder = builder.embedder != null ? builder.embedder : wiring.agentSpacesEmbedder();
         this.agentIdentities = wiring.agentSpacesAgentIdentities(properties, identity, clock);
+        // srad/agentspaces-pdt.md PD-C-07, PD-C-09: the holder the wiring registers each group's
+        // Pdt facade with when agentspaces.pdt.enabled is true, so a group context can hand it out.
+        this.pdts = new Pdts();
         this.spaces = wiring.agentSpacesWithRegistry(properties, node, identity, authorizers, embedder, clock,
-                agentIdentities, builder.schemaRegistry);
+                agentIdentities, builder.schemaRegistry, List.of(), BootstrapChainFactory.defaults(), pdts);
         this.authorizer = wiring.agentSpacesAuthorizer(authorizers, spaces);
         this.scheduler = builder.scheduler != null ? FleetScheduler.over(builder.scheduler)
                 : FleetScheduler.virtual("agentspaces-runtime-");
@@ -173,7 +179,24 @@ public final class FleetRuntime implements AutoCloseable {
 
     /** The context of one joined group, the way this project's features work in it. */
     public FleetContext context(String groupName) {
-        return new FleetContext(spaces, groupName, identity, authorizers.forGroup(groupName));
+        return new FleetContext(spaces, groupName, identity, authorizers.forGroup(groupName), pdts);
+    }
+
+    /**
+     * The persistent-tree facades by group (srad/agentspaces-pdt.md PD-C-02): one per group when
+     * {@code agentspaces.pdt.enabled} is true, else empty.
+     */
+    public Pdts pdts() {
+        return pdts;
+    }
+
+    /**
+     * The persistent-tree facade of a group.
+     *
+     * @throws IllegalStateException when the group has none ({@code agentspaces.pdt.enabled=false})
+     */
+    public ai.badmonkey.agentspaces.pdt.Pdt pdt(String groupName) {
+        return pdts.forGroup(groupName);
     }
 
     /** The context of the first configured group. */

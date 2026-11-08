@@ -47,6 +47,11 @@
       <groupId>ai.badmonkey.agentspaces</groupId>
       <artifactId>agentspaces-agent</artifactId>
     </dependency>
+    <!-- The persistent-tree facade a group context hands out (srad/agentspaces-pdt.md PD-C-07, PD-C-09). -->
+    <dependency>
+      <groupId>ai.badmonkey.agentspaces</groupId>
+      <artifactId>agentspaces-pdt</artifactId>
+    </dependency>
     <dependency>
       <groupId>ai.badmonkey.agentspaces</groupId>
       <artifactId>agentspaces-capabilities</artifactId>

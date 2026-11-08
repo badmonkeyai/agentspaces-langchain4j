@@ -345,6 +345,7 @@ classpath; the enforcer rule and a test keep it that way. JDK 21.
 | Embeddings | `FleetRuntime.builder(...).embedder(LangChain4jFleet.embedder(embeddingModel, "name"))` puts a real model behind semantic discovery, advertised on the capability. |
 | Usage | `Usage.on()`: token usage as push-sum totals across the fleet, attributed entries in an optional metrics space, and a console panel (`fleet.usagePanel()`). |
 | Content tools | `FleetCapabilityTools.Settings.defaults().withContent(true)` (with `agentspaces.content.enabled` on the runtime): `publish_content`, `fetch_content`, `read_content`, `describe_content`, `list_content`, so a model publishes a file as a fleet artifact and reads one another peer published, moved by the content swarm from every holder at once (SPEC v0.1.23 §8). A space entry above `agentspaces.content.escalate-above` travels as an artifact on its own. |
+| PDT tools | `FleetCapabilityTools.Settings.defaults().withPdt(true)` (with `agentspaces.pdt.enabled` and `agentspaces.content.enabled` on the runtime): `pdt_read`, `pdt_assoc`, `pdt_history`, so a model reads a path of a persistent map ref, puts a value at a path as a new version every member merges, and lists the versions (srad/agentspaces-pdt.md PD-C-09). `FleetContext.pdt()` hands out the group's `Pdt` facade to plain Java. |
 
 Every feature is off until its settings enable it, so a one-line facade never
 widens the fleet's reach by accident. The fleet annotations and return

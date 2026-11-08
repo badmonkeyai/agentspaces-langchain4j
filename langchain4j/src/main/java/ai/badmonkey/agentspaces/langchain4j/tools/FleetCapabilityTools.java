@@ -24,6 +24,10 @@ import ai.badmonkey.agentspaces.capabilities.vote.VoteCapability;
 import ai.badmonkey.agentspaces.content.Content;
 import ai.badmonkey.agentspaces.content.Fetch;
 import ai.badmonkey.agentspaces.content.PublishOptions;
+import ai.badmonkey.agentspaces.pdt.Pdt;
+import ai.badmonkey.agentspaces.pdt.refs.Heads;
+import ai.badmonkey.agentspaces.pdt.refs.Ref;
+import ai.badmonkey.agentspaces.pdt.values.PMap;
 import ai.badmonkey.agentspaces.runtime.FleetContext;
 import com.fasterxml.jackson.core.JacksonException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -39,6 +43,7 @@ import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -63,12 +68,19 @@ public final class FleetCapabilityTools {
     public static final List<String> CONTENT_TOOLS = List.of("publish_content", "fetch_content", "read_content",
             "describe_content", "list_content");
 
+    /** The persistent-tree family's tool names (srad/agentspaces-pdt.md PD-C-09). */
+    public static final List<String> PDT_TOOLS = List.of("pdt_read", "pdt_assoc", "pdt_history");
+
+    /** The most entries {@code pdt_read} returns for a whole map. */
+    public static final int PDT_READ_ENTRIES = 200;
+
     /**
      * Which tools are on; all off by default. {@code content} is the content swarm family, which
-     * needs {@code agentspaces.content.enabled} on the runtime; {@code fetchTimeout} bounds
+     * needs {@code agentspaces.content.enabled} on the runtime; {@code pdt} is the persistent-tree
+     * family, which needs {@code agentspaces.pdt.enabled}; {@code fetchTimeout} bounds
      * {@code fetch_content}.
      */
-    public record Settings(boolean vote, boolean aggregate, boolean content, Duration ballotLease,
+    public record Settings(boolean vote, boolean aggregate, boolean content, boolean pdt, Duration ballotLease,
                            Duration settleTimeout, Duration fetchTimeout) {
         public Settings {
             Objects.requireNonNull(ballotLease, "ballotLease");
@@ -76,9 +88,15 @@ public final class FleetCapabilityTools {
             Objects.requireNonNull(fetchTimeout, "fetchTimeout");
         }
 
-        /** The two-family form of 0.4.0: content off, a ten-minute fetch timeout. */
+        /** The three-family form of 0.5.0: pdt off. */
+        public Settings(boolean vote, boolean aggregate, boolean content, Duration ballotLease,
+                        Duration settleTimeout, Duration fetchTimeout) {
+            this(vote, aggregate, content, false, ballotLease, settleTimeout, fetchTimeout);
+        }
+
+        /** The two-family form of 0.4.0: content and pdt off, a ten-minute fetch timeout. */
         public Settings(boolean vote, boolean aggregate, Duration ballotLease, Duration settleTimeout) {
-            this(vote, aggregate, false, ballotLease, settleTimeout, Duration.ofMinutes(10));
+            this(vote, aggregate, false, false, ballotLease, settleTimeout, Duration.ofMinutes(10));
         }
 
         public static Settings defaults() {
@@ -87,40 +105,46 @@ public final class FleetCapabilityTools {
 
         /** Every family on. */
         public static Settings all() {
-            return new Settings(true, true, true, Duration.ofHours(1), Duration.ofSeconds(10), Duration.ofMinutes(10));
+            return new Settings(true, true, true, true, Duration.ofHours(1), Duration.ofSeconds(10), Duration.ofMinutes(10));
         }
 
         public Settings withVote(boolean on) {
-            return new Settings(on, aggregate, content, ballotLease, settleTimeout, fetchTimeout);
+            return new Settings(on, aggregate, content, pdt, ballotLease, settleTimeout, fetchTimeout);
         }
 
         public Settings withAggregate(boolean on) {
-            return new Settings(vote, on, content, ballotLease, settleTimeout, fetchTimeout);
+            return new Settings(vote, on, content, pdt, ballotLease, settleTimeout, fetchTimeout);
         }
 
         public Settings withContent(boolean on) {
-            return new Settings(vote, aggregate, on, ballotLease, settleTimeout, fetchTimeout);
+            return new Settings(vote, aggregate, on, pdt, ballotLease, settleTimeout, fetchTimeout);
+        }
+
+        /** The persistent-tree tools: {@code pdt_read}, {@code pdt_assoc}, {@code pdt_history}. */
+        public Settings withPdt(boolean on) {
+            return new Settings(vote, aggregate, content, on, ballotLease, settleTimeout, fetchTimeout);
         }
 
         public Settings withFetchTimeout(Duration timeout) {
-            return new Settings(vote, aggregate, content, ballotLease, settleTimeout, timeout);
+            return new Settings(vote, aggregate, content, pdt, ballotLease, settleTimeout, timeout);
         }
 
         public boolean any() {
-            return vote || aggregate || content;
+            return vote || aggregate || content || pdt;
         }
     }
 
     private final Supplier<VoteClient> vote;
     private final Supplier<AggregateClient> aggregate;
     private final Supplier<Content> content;
+    private final Supplier<Pdt> pdt;
     private final Settings settings;
     private final Set<String> enabled;
     private final ObjectMapper json = new ObjectMapper();
 
     public FleetCapabilityTools(FleetContext fleet, Settings settings) {
         this(() -> fleet.group().capability(VoteClient.class), () -> fleet.group().capability(AggregateClient.class),
-                () -> contentOf(fleet), settings);
+                () -> contentOf(fleet), fleet::requiredPdt, settings);
     }
 
     public FleetCapabilityTools(Supplier<VoteClient> vote, Supplier<AggregateClient> aggregate, Settings settings) {
@@ -131,9 +155,22 @@ public final class FleetCapabilityTools {
 
     public FleetCapabilityTools(Supplier<VoteClient> vote, Supplier<AggregateClient> aggregate,
                                 Supplier<Content> content, Settings settings) {
+        this(vote, aggregate, content, () -> {
+            throw new IllegalStateException("no persistent trees were given to these tools");
+        }, settings);
+    }
+
+    /**
+     * The tools over explicit clients, the content swarm and the persistent trees included.
+     *
+     * @param pdt resolves the group's {@link Pdt}; may throw when the group has none
+     */
+    public FleetCapabilityTools(Supplier<VoteClient> vote, Supplier<AggregateClient> aggregate,
+                                Supplier<Content> content, Supplier<Pdt> pdt, Settings settings) {
         this.vote = vote;
         this.aggregate = aggregate;
         this.content = content;
+        this.pdt = Objects.requireNonNull(pdt, "pdt");
         this.settings = Objects.requireNonNull(settings, "settings");
         Set<String> names = new LinkedHashSet<>();
         if (settings.vote()) {
@@ -144,6 +181,9 @@ public final class FleetCapabilityTools {
         }
         if (settings.content()) {
             names.addAll(CONTENT_TOOLS);
+        }
+        if (settings.pdt()) {
+            names.addAll(PDT_TOOLS);
         }
         this.enabled = Set.copyOf(names);
     }
@@ -327,6 +367,168 @@ public final class FleetCapabilityTools {
             out.add(manifest(m));
         }
         return render(out);
+    }
+
+    // ---- the persistent-tree family (srad/agentspaces-pdt.md PD-C-09)
+
+    @Tool(name = "pdt_read", value = "Reads a persistent map ref of the fleet by name: the value at a path of keys"
+            + " separated by /, or the whole map (up to 200 entries) when the path is empty. The value is the"
+            + " merge every member computes from the ref's heads.")
+    public String pdtRead(@P("The ref's name") String ref,
+                          @P("A path of keys separated by /, or empty for the whole map") String path) {
+        try {
+            PMap<Object, Object> map = mapRef(ref).deref();
+            List<Object> steps = pathOf(path);
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("ref", ref);
+            out.put("root", map.root());
+            out.put("path", path == null ? "" : path);
+            if (steps.isEmpty()) {
+                Map<Object, Object> entries = new LinkedHashMap<>();
+                int n = 0;
+                for (Map.Entry<Object, Object> e : map) {
+                    if (n++ >= PDT_READ_ENTRIES) {
+                        break;
+                    }
+                    entries.put(e.getKey(), e.getValue());
+                }
+                out.put("count", map.count());
+                out.put("value", entries);
+                out.put("truncated", map.count() > PDT_READ_ENTRIES);
+                return render(out);
+            }
+            Optional<Object> top = map.get(steps.get(0));
+            Object value = top.orElse(null);
+            boolean found = top.isPresent();
+            for (int i = 1; found && i < steps.size(); i++) {
+                Object step = steps.get(i);
+                if (value instanceof Map<?, ?> m) {
+                    found = m.containsKey(step) || (step instanceof Integer && m.containsKey(String.valueOf(step)));
+                    value = m.containsKey(step) ? m.get(step) : m.get(String.valueOf(step));
+                } else if (value instanceof List<?> list && step instanceof Integer index) {
+                    found = index >= 0 && index < list.size();
+                    value = found ? list.get(index) : null;
+                } else {
+                    found = false;
+                }
+            }
+            out.put("found", found);
+            out.put("value", found ? value : null);
+            return render(out);
+        } catch (RuntimeException e) {
+            return render(Map.of("error", "pdt_read failed: " + e.getMessage()));
+        }
+    }
+
+    @Tool(name = "pdt_assoc", value = "Puts a value into a persistent map ref of the fleet at a path of keys"
+            + " separated by /, as a new version every member merges; the value is JSON (an object, array,"
+            + " number, boolean, or null) or plain text. Returns the new version's root.")
+    public String pdtAssoc(@P("The ref's name") String ref,
+                           @P("A path of keys separated by /; the first is a key of the map") String path,
+                           @P("The value as JSON, or plain text") String value) {
+        try {
+            List<Object> steps = pathOf(path);
+            if (steps.isEmpty()) {
+                return render(Map.of("error", "pdt_assoc needs a path of at least one key"));
+            }
+            Object parsed = parseValue(value);
+            Ref<PMap<Object, Object>> handle = mapRef(ref);
+            PMap<Object, Object> written = handle.swap(map -> steps.size() == 1
+                    ? map.assoc(steps.get(0), parsed)
+                    : map.updateIn(steps, old -> parsed));
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("ref", ref);
+            out.put("root", written.root());
+            out.put("path", path);
+            out.put("value", parsed);
+            out.put("count", written.count());
+            return render(out);
+        } catch (RuntimeException e) {
+            return render(Map.of("error", "pdt_assoc failed: " + e.getMessage()));
+        }
+    }
+
+    @Tool(name = "pdt_history", value = "The versions of a persistent map ref of the fleet: the current heads"
+            + " first, then up to n earlier versions newest first, each with its root, sequence number, size,"
+            + " issuer, issue stamp, and the roots it was computed from.")
+    public String pdtHistory(@P("The ref's name") String ref, @P("The most earlier versions to list") int n) {
+        try {
+            Ref<PMap<Object, Object>> handle = mapRef(ref);
+            Heads heads = handle.heads();
+            List<Map<String, Object>> out = new ArrayList<>();
+            for (Heads.Head head : heads.heads()) {
+                out.add(version(head, true));
+            }
+            for (Heads.Head earlier : handle.history(Math.max(0, n))) {
+                out.add(version(earlier, false));
+            }
+            Map<String, Object> doc = new LinkedHashMap<>();
+            doc.put("ref", ref);
+            doc.put("heads", heads.heads().size());
+            doc.put("versions", out);
+            return render(doc);
+        } catch (RuntimeException e) {
+            return render(Map.of("error", "pdt_history failed: " + e.getMessage()));
+        }
+    }
+
+    private Ref<PMap<Object, Object>> mapRef(String name) {
+        if (name == null || name.isBlank()) {
+            throw new IllegalArgumentException("a ref name is needed");
+        }
+        return pdt.get().ref(name, PMap.class);
+    }
+
+    /** The steps of a path: keys split on {@code /}, a decimal segment as an index for lists. */
+    public static List<Object> pathOf(String path) {
+        List<Object> steps = new ArrayList<>();
+        if (path == null) {
+            return steps;
+        }
+        for (String segment : path.split("/")) {
+            if (segment.isEmpty()) {
+                continue;
+            }
+            if (segment.chars().allMatch(Character::isDigit) && segment.length() < 10) {
+                steps.add(Integer.parseInt(segment));
+            } else {
+                steps.add(segment);
+            }
+        }
+        return steps;
+    }
+
+    /** JSON when the text parses as JSON, else the text itself. */
+    Object parseValue(String value) {
+        if (value == null) {
+            return null;
+        }
+        String text = value.strip();
+        if (text.isEmpty()) {
+            return value;
+        }
+        char first = text.charAt(0);
+        if (first == '{' || first == '[' || first == '"' || first == '-' || Character.isDigit(first)
+                || text.equals("true") || text.equals("false") || text.equals("null")) {
+            try {
+                return json.readValue(text, Object.class);
+            } catch (JacksonException e) {
+                return value;
+            }
+        }
+        return value;
+    }
+
+    private static Map<String, Object> version(Heads.Head head, boolean isHead) {
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("root", head.root());
+        out.put("head", isHead);
+        out.put("seq", head.seq());
+        out.put("size", head.size());
+        out.put("issuer", head.issuer() == null ? "" : head.issuer().toString());
+        out.put("issued", head.issued() == null ? "" : head.issued().toString());
+        out.put("base", head.base());
+        return out;
     }
 
     private static Map<String, Object> manifest(Manifest m) {
