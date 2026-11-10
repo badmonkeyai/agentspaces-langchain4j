@@ -22,7 +22,7 @@
   <parent>
     <groupId>ai.badmonkey.agentspaces</groupId>
     <artifactId>agentspaces-langchain4j-parent</artifactId>
-    <version>0.5.0</version>
+    <version>0.6.0</version>
   </parent>
 
   <artifactId>agentspaces-langchain4j</artifactId>
@@ -58,6 +58,11 @@
     <dependency>
       <groupId>ai.badmonkey.agentspaces</groupId>
       <artifactId>agentspaces-pdt</artifactId>
+    </dependency>
+    <!-- StoreChooser.Need, which pdt_pin hands to Pdt.storeFor (PDT 2 phase 7, P2-C-04). -->
+    <dependency>
+      <groupId>ai.badmonkey.agentspaces</groupId>
+      <artifactId>agentspaces-planner</artifactId>
     </dependency>
     <dependency>
       <groupId>dev.langchain4j</groupId>

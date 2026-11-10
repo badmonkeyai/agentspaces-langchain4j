@@ -18,6 +18,8 @@ package ai.badmonkey.agentspaces.langchain4j.tools;
 import ai.badmonkey.agentspaces.agent.capability.AggregateClient;
 import ai.badmonkey.agentspaces.agent.capability.VoteClient;
 import ai.badmonkey.agentspaces.agent.content.Manifest;
+import ai.badmonkey.agentspaces.agent.content.StorePin;
+import ai.badmonkey.agentspaces.agent.content.StoreReceipt;
 import ai.badmonkey.agentspaces.api.space.Lease;
 import ai.badmonkey.agentspaces.capabilities.aggregate.PushSumAggregate;
 import ai.badmonkey.agentspaces.capabilities.vote.VoteCapability;
@@ -27,7 +29,9 @@ import ai.badmonkey.agentspaces.content.PublishOptions;
 import ai.badmonkey.agentspaces.pdt.Pdt;
 import ai.badmonkey.agentspaces.pdt.refs.Heads;
 import ai.badmonkey.agentspaces.pdt.refs.Ref;
+import ai.badmonkey.agentspaces.pdt.stores.Stores;
 import ai.badmonkey.agentspaces.pdt.values.PMap;
+import ai.badmonkey.agentspaces.planner.StoreChooser;
 import ai.badmonkey.agentspaces.runtime.FleetContext;
 import com.fasterxml.jackson.core.JacksonException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -43,6 +47,7 @@ import java.nio.channels.SeekableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -68,8 +73,12 @@ public final class FleetCapabilityTools {
     public static final List<String> CONTENT_TOOLS = List.of("publish_content", "fetch_content", "read_content",
             "describe_content", "list_content");
 
-    /** The persistent-tree family's tool names (srad/agentspaces-pdt.md PD-C-09). */
-    public static final List<String> PDT_TOOLS = List.of("pdt_read", "pdt_assoc", "pdt_history");
+    /**
+     * The persistent-tree family's tool names (srad/agentspaces-pdt.md PD-C-09), with pin and status on the
+     * content stores (PDT 2 phase 7, P2-C-04).
+     */
+    public static final List<String> PDT_TOOLS = List.of("pdt_read", "pdt_assoc", "pdt_history", "pdt_pin",
+            "pdt_store_status");
 
     /** The most entries {@code pdt_read} returns for a whole map. */
     public static final int PDT_READ_ENTRIES = 200;
@@ -120,7 +129,10 @@ public final class FleetCapabilityTools {
             return new Settings(vote, aggregate, on, pdt, ballotLease, settleTimeout, fetchTimeout);
         }
 
-        /** The persistent-tree tools: {@code pdt_read}, {@code pdt_assoc}, {@code pdt_history}. */
+        /**
+         * The persistent-tree tools: {@code pdt_read}, {@code pdt_assoc}, {@code pdt_history}, {@code pdt_pin},
+         * and {@code pdt_store_status}.
+         */
         public Settings withPdt(boolean on) {
             return new Settings(vote, aggregate, content, on, ballotLease, settleTimeout, fetchTimeout);
         }
@@ -470,6 +482,70 @@ public final class FleetCapabilityTools {
         } catch (RuntimeException e) {
             return render(Map.of("error", "pdt_history failed: " + e.getMessage()));
         }
+    }
+
+    @Tool(name = "pdt_pin", value = "Asks the fleet's content stores to hold a root, so the data outlives this"
+            + " peer: a version root from pdt_read or pdt_assoc, or an artifact root from publish_content. The"
+            + " stores' cards decide which stores, and this peer signs the pin; pinning the same root again renews"
+            + " it. Returns the stores asked. Fails when this peer does not hold the root or no store fits.")
+    public String pdtPin(@P("The root to keep (a content id starting with b)") String root,
+                         @P("How many stores should hold it, at least 1") int copies,
+                         @P("How long the stores should hold it, in hours, at least 1") int hours) {
+        // PDT 2 phase 7, P2-C-04: Pdt.storeFor chooses the stores and writes one signed pin (P2-S-11)
+        try {
+            if (hours < 1) {
+                return render(Map.of("error", "pdt_pin needs hours of at least 1"));
+            }
+            Stores.Pinning pinning = pdt.get().storeFor(rootOf(root), StoreChooser.Need.of(0, copies),
+                    Duration.ofHours(hours));
+            StorePin pin = pinning.pin();
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("root", pin.root());
+            out.put("kind", pin.kind());
+            out.put("copies", pin.copies());
+            out.put("leaseSeconds", pin.lease());
+            out.put("stores", pinning.chosen().stream().map(card -> card.issuer().value()).toList());
+            return render(out);
+        } catch (RuntimeException e) {
+            return render(Map.of("error", "pdt_pin failed: " + e.getMessage()));
+        }
+    }
+
+    @Tool(name = "pdt_store_status", value = "Which content stores hold a root, as this peer sees it: one receipt"
+            + " per store with its bytes and when its hold ends, the copies that count (a store that failed this"
+            + " peer's challenges no longer counts), and whether the root lost its store with no other store to"
+            + " take it.")
+    public String pdtStoreStatus(@P("The root (a content id starting with b)") String root) {
+        // PDT 2 phase 7, P2-C-04: the live receipts of stores this peer has not struck (P2-S-07)
+        try {
+            String cid = rootOf(root);
+            Stores stores = pdt.get().stores();
+            List<StoreReceipt> receipts = stores.receipts(cid);
+            List<Map<String, Object>> holders = new ArrayList<>();
+            for (StoreReceipt receipt : receipts) {
+                Map<String, Object> holder = new LinkedHashMap<>();
+                holder.put("store", receipt.holder().value());
+                holder.put("bytes", receipt.bytes());
+                holder.put("until", Instant.ofEpochMilli(receipt.until()).toString());
+                holder.put("blind", receipt.blind());
+                holders.add(holder);
+            }
+            Map<String, Object> out = new LinkedHashMap<>();
+            out.put("root", cid);
+            out.put("copies", receipts.size());
+            out.put("holders", holders);
+            out.put("unplaced", stores.unplaced().contains(cid));
+            return render(out);
+        } catch (RuntimeException e) {
+            return render(Map.of("error", "pdt_store_status failed: " + e.getMessage()));
+        }
+    }
+
+    private static String rootOf(String root) {
+        if (root == null || root.isBlank()) {
+            throw new IllegalArgumentException("a root is needed");
+        }
+        return root.strip();
     }
 
     private Ref<PMap<Object, Object>> mapRef(String name) {

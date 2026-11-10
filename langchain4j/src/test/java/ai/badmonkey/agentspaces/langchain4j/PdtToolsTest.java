@@ -101,7 +101,8 @@ class PdtToolsTest {
             assertThat(fleet.capabilityTools().pdtRead("facts", "")).contains("error").contains("agentspaces.pdt.enabled");
             assertThat(FleetCapabilityTools.Settings.all().pdt()).isTrue();
             assertThat(new FleetCapabilityTools.Settings(false, false, Duration.ofHours(1), Duration.ofSeconds(1)).any()).isFalse();
-            assertThat(List.of("pdt_read", "pdt_assoc", "pdt_history")).isEqualTo(FleetCapabilityTools.PDT_TOOLS);
+            assertThat(List.of("pdt_read", "pdt_assoc", "pdt_history", "pdt_pin", "pdt_store_status"))
+                    .isEqualTo(FleetCapabilityTools.PDT_TOOLS);
         }
     }
 }

@@ -32,6 +32,7 @@ import ai.badmonkey.agentspaces.test.TestClock;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -271,17 +272,13 @@ class FleetUsageTest {
     }
 
     @Test
-    @SuppressWarnings("removal")
-    void theDeprecatedConstructorIgnoresItsFirstArgument() {
-        FleetUsage usage = new FleetUsage(null, view("p1"), Duration.ofHours(1), INTERVAL,
-                Clock.fixed(START, ZoneOffset.UTC));
-        usage.record(new ModelUsage("m1", "p", 1, 2, 3, "a/x", "peer:z1"));
-        usage.publish();
-
-        assertThat(store.readAll(Template.of(ModelUsageTotal.class), 10))
-                .containsExactly(new ModelUsageTotal("m1", "peer:z1", 1, 2, 3, START.toEpochMilli()));
-        assertThat(usage.fleetTotal("m1")).hasValue(3);
-        assertThat(FleetUsage.EPOCH_PREFIX).isEqualTo("agentspaces.usage.");
+    void theDeprecatedPushSumMembersAreGone() {
+        assertThat(FleetUsage.class.getConstructors())
+                .extracting(c -> List.of(c.getParameterTypes()))
+                .containsExactly(List.of(Space.class, Duration.class, Duration.class, Clock.class));
+        assertThat(FleetUsage.class.getDeclaredFields())
+                .extracting(Field::getName)
+                .doesNotContain("EPOCH_PREFIX");
     }
 
     private FleetUsage sink(Space metrics, Duration interval) {

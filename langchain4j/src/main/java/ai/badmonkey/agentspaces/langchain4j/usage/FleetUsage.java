@@ -62,16 +62,6 @@ import static ai.badmonkey.agentspaces.api.space.Matchers.eq;
 public class FleetUsage implements UsageSink {
 
     /**
-     * The prefix of the push-sum epochs the sink joined before 2026-10-12 (PERF2 §3.5).
-     * Nothing starts such an epoch now.
-     *
-     * @deprecated deprecated in 0.5.0 and removed in 0.6.0; the per-peer
-     *             {@link ModelUsageTotal} entries replaced the epochs
-     */
-    @Deprecated(forRemoval = true, since = "0.5.0")
-    public static final String EPOCH_PREFIX = "agentspaces.usage.";
-
-    /**
      * The most per-peer totals one {@link #fleetTotal} read takes. A read that
      * returns this many entries may have dropped others, so the total may
      * undercount; the sink warns once when that happens.
@@ -104,23 +94,6 @@ public class FleetUsage implements UsageSink {
         this.entryLease = Lease.of(Objects.requireNonNull(entryLease, "entryLease"));
         this.interval = Objects.requireNonNull(interval, "interval");
         this.sinceMillis = Objects.requireNonNull(clock, "clock").millis();
-    }
-
-    /**
-     * Creates the sink, ignoring the first argument.
-     *
-     * @param aggregate  ignored; the sink stopped using push-sum on 2026-10-12 (PERF2 §3.5)
-     * @param metrics    the space usage entries and per-peer totals go to, or null for local counts only
-     * @param entryLease the lease of per-call usage entries
-     * @param interval   the publish interval
-     * @param clock      the clock that stamps when this peer started counting
-     * @deprecated deprecated in 0.5.0 and removed in 0.6.0; use
-     *             {@link #FleetUsage(Space, Duration, Duration, Clock)}
-     */
-    @Deprecated(forRemoval = true, since = "0.5.0")
-    public FleetUsage(ai.badmonkey.agentspaces.capabilities.aggregate.PushSumAggregate aggregate,
-                      Space metrics, Duration entryLease, Duration interval, Clock clock) {
-        this(metrics, entryLease, interval, clock);
     }
 
     @Override
