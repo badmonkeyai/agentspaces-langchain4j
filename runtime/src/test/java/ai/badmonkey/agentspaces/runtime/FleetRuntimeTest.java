@@ -87,6 +87,32 @@ class FleetRuntimeTest {
         assertThat(worker.scheduler().executor().isShutdown()).isTrue();
     }
 
+    /**
+     * srad/replication-by-entry.md appendix D (RE-L-04): the starter's agentspaces.gossip.* and
+     * agentspaces.space.* reach the node through the shared wiring, and a misspelt key refuses at start.
+     */
+    @Test
+    @Timeout(60)
+    void theReplicationKeysReachTheNodeAndAMisspeltOneRefuses() {
+        try (FleetRuntime runtime = FleetRuntime.start(PropertiesLoader.flat(Fleets.fleet(Fleets.freePort(), 0)))) {
+            assertThat(runtime.node().wireHints())
+                    .containsEntry(ai.badmonkey.agentspaces.peering.node.PeerNode.AE_HINT, "2")
+                    .containsEntry(ai.badmonkey.agentspaces.peering.node.PeerNode.HORIZON_HINT, "1");
+        }
+        java.util.Map<String, Object> off = new java.util.LinkedHashMap<>(Fleets.fleet(Fleets.freePort(), 0));
+        off.put("agentspaces.gossip.audit", "false");
+        off.put("agentspaces.space.horizon", "legacy");
+        try (FleetRuntime runtime = FleetRuntime.start(PropertiesLoader.flat(off))) {
+            assertThat(runtime.node().wireHints()).doesNotContainKeys(
+                    ai.badmonkey.agentspaces.peering.node.PeerNode.AE_HINT,
+                    ai.badmonkey.agentspaces.peering.node.PeerNode.HORIZON_HINT);
+        }
+        java.util.Map<String, Object> misspelt = new java.util.LinkedHashMap<>(Fleets.fleet(Fleets.freePort(), 0));
+        misspelt.put("agentspaces.space.horizn", "legacy");
+        assertThatThrownBy(() -> FleetRuntime.start(PropertiesLoader.flat(misspelt)))
+                .hasMessageContaining("agentspaces.space.horizn").hasMessageContaining("horizon");
+    }
+
     @Test
     @Timeout(60)
     void participantsStartAfterTheNodeAndStopInReverse() {

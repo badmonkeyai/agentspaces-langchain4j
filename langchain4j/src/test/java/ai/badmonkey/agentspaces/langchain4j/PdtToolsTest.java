@@ -72,8 +72,14 @@ class PdtToolsTest {
             String list = fa.capabilityTools().pdtAssoc("facts", "tags", "[\"x\",\"y\"]");
             assertThat(list).contains("\"root\":\"bafyrei");
 
+            // The ref's heads replicate to b as space entries, so b can still hold the head of
+            // version 2 or 3 after a wrote version 4. Wait for the last write, the tags: a is the
+            // only writer, so the version that has the tags has every earlier write too. Waiting
+            // on an earlier write let b read the tags from a version that did not have them yet,
+            // and could let b's own write below fork from an old head.
             assertThat(Fleets.await(Duration.ofSeconds(60),
-                    () -> fb.capabilityTools().pdtRead("facts", "owner/name").contains("\"value\":\"ana\""))).isTrue();
+                    () -> fb.capabilityTools().pdtRead("facts", "tags/1").contains("\"value\":\"y\""))).isTrue();
+            assertThat(fb.capabilityTools().pdtRead("facts", "owner/name")).contains("\"value\":\"ana\"");
             assertThat(fb.capabilityTools().pdtRead("facts", "total")).contains("\"found\":true").contains("\"value\":3");
             assertThat(fb.capabilityTools().pdtRead("facts", "tags/1")).contains("\"value\":\"y\"");
             assertThat(fb.capabilityTools().pdtRead("facts", "nothing/here")).contains("\"found\":false");
