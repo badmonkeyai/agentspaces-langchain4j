@@ -93,6 +93,25 @@ class FleetRuntimeTest {
      */
     @Test
     @Timeout(60)
+    void rulesGateTrueRunsTheConstraintGateWithoutSpringAndItsAbsenceRunsNone() {
+        // the Groovy fleet DSL accepted rules { gate } while only the starter built the gate, so a Groovy peer ran
+        // without it and said nothing (a side finding of the PDT second-swap ticket, 2026-11-17)
+        java.util.Map<String, Object> on = new java.util.LinkedHashMap<>(Fleets.fleet(Fleets.freePort(), 0));
+        on.put("agentspaces.rules.gate", "true");
+        try (FleetRuntime runtime = FleetRuntime.start(PropertiesLoader.flat(on))) {
+            assertThat(runtime.gates()).isNotNull();
+            assertThat(runtime.gates().isRunning()).isTrue();
+            for (String group : runtime.spaces().groupNames()) {
+                assertThat(runtime.gates().gate(group)).as("the gate of group %s", group).isNotNull();
+            }
+        }
+        try (FleetRuntime runtime = FleetRuntime.start(PropertiesLoader.flat(Fleets.fleet(Fleets.freePort(), 0)))) {
+            assertThat(runtime.gates()).isNull();
+        }
+    }
+
+    @Test
+    @Timeout(60)
     void theReplicationKeysReachTheNodeAndAMisspeltOneRefuses() {
         try (FleetRuntime runtime = FleetRuntime.start(PropertiesLoader.flat(Fleets.fleet(Fleets.freePort(), 0)))) {
             assertThat(runtime.node().wireHints())

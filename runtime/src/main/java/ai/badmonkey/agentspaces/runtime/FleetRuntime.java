@@ -75,6 +75,7 @@ public final class FleetRuntime implements AutoCloseable {
     private final AgentIdentityFactory agentIdentities;
     private final Pdts pdts;
     private final AgentSpaces spaces;
+    private final Gates gates;
     private final Authorizer authorizer;
     private final FleetScheduler scheduler;
     private final List<FleetParticipant> participants = new CopyOnWriteArrayList<>();
@@ -99,6 +100,10 @@ public final class FleetRuntime implements AutoCloseable {
         this.spaces = wiring.agentSpacesWithRegistry(properties, node, identity, authorizers, embedder, clock,
                 agentIdentities, builder.schemaRegistry, List.of(), BootstrapChainFactory.defaults(), pdts);
         this.authorizer = wiring.agentSpacesAuthorizer(authorizers, spaces);
+        // agentspaces.rules.gate: the starter builds the constraint gate as a bean; without Spring the runtime builds it
+        // here, so a peer that sets the key runs the gate rather than silently going without it (a side finding of the
+        // PDT second-swap ticket, 2026-11-17)
+        this.gates = properties.getRules().isGate() ? new Gates() : null;
         this.scheduler = builder.scheduler != null ? FleetScheduler.over(builder.scheduler)
                 : FleetScheduler.virtual("agentspaces-runtime-");
         this.participants.addAll(builder.participants);
@@ -121,6 +126,9 @@ public final class FleetRuntime implements AutoCloseable {
         List<FleetParticipant> started = new ArrayList<>();
         try {
             node.startTicking(Duration.ofMillis(properties.getTickMillis()));
+            if (gates != null) {
+                gates.start(); // after the node and the spaces, before the bound agents take, as the starter's phase
+            }
             for (FleetParticipant participant : participants) {
                 participant.start();
                 started.add(participant);
@@ -145,6 +153,9 @@ public final class FleetRuntime implements AutoCloseable {
     }
 
     private void release() {
+        if (gates != null) {
+            gates.close();
+        }
         try {
             spaces.close();
         } finally {
@@ -226,6 +237,69 @@ public final class FleetRuntime implements AutoCloseable {
             participant.start();
         }
         return this;
+    }
+
+    /** The constraint gates when {@code agentspaces.rules.gate} is true, else null; for the tests of this package. */
+    Gates gates() {
+        return gates;
+    }
+
+    /**
+     * The starter's ConstraintGates without Spring's lifecycle: one gate per group over the rules space, watching the
+     * group's other spaces, installed in the group's binder, with the rules.gate hint set (ISSUE-Constraints FR-10).
+     */
+    final class Gates {
+        private final java.util.Map<String, ai.badmonkey.agentspaces.constraints.ConstraintGate> byGroup = new java.util.LinkedHashMap<>();
+        private final List<ai.badmonkey.agentspaces.space.replicated.ReplicatedSpace> opened = new ArrayList<>();
+        private boolean running;
+
+        synchronized void start() {
+            if (running) {
+                return;
+            }
+            String spaceName = properties.getRules().getSpace();
+            for (String groupName : spaces.groupNames()) {
+                AgentSpaces.GroupContext group = spaces.group(groupName);
+                ai.badmonkey.agentspaces.api.space.Space constraints;
+                if (group.spaceNames().contains(spaceName)) {
+                    constraints = group.space(spaceName);
+                } else {
+                    ai.badmonkey.agentspaces.space.replicated.ReplicatedSpace space =
+                            ai.badmonkey.agentspaces.space.replicated.ReplicatedSpace.builder(group.runtime(), spaceName, identity, "rules")
+                                    .settleWindow(Duration.ofMillis(150)).clock(clock).build();
+                    opened.add(space);
+                    constraints = space;
+                }
+                ai.badmonkey.agentspaces.constraints.ConstraintGate gate = ai.badmonkey.agentspaces.constraints.ConstraintGate.attach(
+                        constraints, authorizers == null ? null : authorizers.forGroup(groupName), spaceName, clock,
+                        identity.peerId().value(), properties.getRules().getCacheKeys());
+                for (String other : group.spaceNames()) {
+                    if (!other.equals(spaceName)) {
+                        gate.watch(other, group.space(other));
+                    }
+                }
+                group.binder().constraintGate(gate);
+                byGroup.put(groupName, gate);
+                node.groupHint(group.runtime().id(), "rules.gate", "true");
+            }
+            running = true;
+        }
+
+        synchronized boolean isRunning() {
+            return running;
+        }
+
+        synchronized ai.badmonkey.agentspaces.constraints.ConstraintGate gate(String groupName) {
+            return byGroup.get(groupName);
+        }
+
+        synchronized void close() {
+            running = false;
+            byGroup.values().forEach(ai.badmonkey.agentspaces.constraints.ConstraintGate::close);
+            byGroup.clear();
+            opened.forEach(ai.badmonkey.agentspaces.space.replicated.ReplicatedSpace::close);
+            opened.clear();
+        }
     }
 
     public AgentSpaces spaces() {
